@@ -1,0 +1,1637 @@
+openapi: 3.0.3
+info:
+  title: Gold Trading System API
+  version: 1.0.0
+  description: 'REST API for account registration, wallets, gold trading, broadcasts,
+
+    and administrative operations. Monetary and gold values returned from
+
+    persisted state use fixed-point strings so clients do not lose precision.
+
+    '
+  contact:
+    name: Gold Trading System Maintainers
+servers:
+- url: http://localhost:3000
+  description: Local development server
+security:
+- bearerAuth: []
+tags:
+- name: Auth
+  description: Public registration/login and authenticated profile
+- name: Wallet
+  description: Authenticated wallet operations
+- name: Trading
+  description: Authenticated multi-currency gold trading from a persisted USD price reference
+- name: Market
+  description: Public price read and administrator-controlled price update
+- name: Broadcasts
+  description: Authenticated broadcast read and administrator-controlled creation
+- name: Admin
+  description: Requires a valid JWT whose current database user has the admin role
+paths:
+  /api/auth/register:
+    post:
+      tags:
+      - Auth
+      summary: Register an account
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterAuthEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email is already registered
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Register an account.
+  /api/auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Log in
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Credentials accepted
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Log in.
+  /api/auth/me:
+    get:
+      tags:
+      - Auth
+      summary: Get the current user
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current profile, wallets, and gold holding
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Get the current user.
+  /api/wallet:
+    get:
+      tags:
+      - Wallet
+      summary: Get wallet balances and gold holding
+      operationId: getWallet
+      responses:
+        '200':
+          description: Current balances
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletSummaryEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Get wallet balances and gold holding.
+  /api/wallet/deposit:
+    post:
+      tags:
+      - Wallet
+      summary: Simulate a wallet deposit
+      operationId: depositFunds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoneyMutationRequest'
+      responses:
+        '201':
+          description: Deposit recorded
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Simulated deposits are disabled in this environment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Demo-only simulated deposit; requires ALLOW_SIMULATED_DEPOSITS=true.
+  /api/wallet/withdraw:
+    post:
+      tags:
+      - Wallet
+      summary: Withdraw from a wallet
+      operationId: withdrawFunds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoneyMutationRequest'
+      responses:
+        '200':
+          description: Withdrawal recorded
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Withdraw from a wallet.
+  /api/wallet/transactions:
+    get:
+      tags:
+      - Wallet
+      summary: List the current user's transactions
+      operationId: listWalletTransactions
+      parameters:
+      - name: page
+        in: query
+        schema: &id001
+          type: integer
+          minimum: 1
+          default: 1
+      - name: pageSize
+        in: query
+        schema: &id002
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: type
+        in: query
+        schema: &id006
+          $ref: '#/components/schemas/TransactionType'
+      - name: currency
+        in: query
+        schema: &id003
+          $ref: '#/components/schemas/Currency'
+      - name: from
+        in: query
+        description: Inclusive ISO date or date-time lower bound
+        schema: &id004
+          type: string
+      - name: to
+        in: query
+        description: Inclusive ISO date or date-time upper bound
+        schema: &id005
+          type: string
+      responses:
+        '200':
+          description: Paginated transactions
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: List the current user's transactions.
+  /api/trades:
+    get:
+      tags:
+      - Trading
+      summary: List the current user's trades
+      operationId: listTrades
+      parameters:
+      - name: page
+        in: query
+        schema: *id001
+      - name: pageSize
+        in: query
+        schema: *id002
+      - name: type
+        in: query
+        schema:
+          $ref: '#/components/schemas/TradeType'
+      - name: currency
+        in: query
+        schema: *id003
+      - name: from
+        in: query
+        description: Inclusive ISO date or date-time lower bound
+        schema: *id004
+      - name: to
+        in: query
+        description: Inclusive ISO date or date-time upper bound
+        schema: *id005
+      responses:
+        '200':
+          description: Paginated trades
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: List the current user's trades.
+  /api/trades/buy:
+    post:
+      tags:
+      - Trading
+      summary: Buy gold with wallet funds
+      operationId: buyGold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeRequest'
+      responses:
+        '200':
+          description: Purchase completed
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Buy gold with wallet funds.
+  /api/trades/sell:
+    post:
+      tags:
+      - Trading
+      summary: Sell gold for wallet funds
+      operationId: sellGold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeRequest'
+      responses:
+        '200':
+          description: Sale completed
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Sell gold for wallet funds.
+  /api/price:
+    get:
+      tags:
+      - Market
+      summary: Get the admin-controlled USD gold price
+      description: Returns the persisted mock USD price. No background process changes it.
+      operationId: getGoldPrice
+      security: []
+      responses:
+        '200':
+          description: Current USD price per gram
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - Market
+      - Admin
+      summary: Set the mock USD gold price
+      operationId: setGoldPrice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPriceRequest'
+      responses:
+        '200':
+          description: Price updated
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Set the mock USD gold price.
+  /api/broadcasts:
+    get:
+      tags:
+      - Broadcasts
+      summary: List active, unexpired broadcasts
+      operationId: listBroadcasts
+      responses:
+        '200':
+          description: Up to 20 current broadcasts, newest first
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: List active, unexpired broadcasts.
+  /api/admin/users:
+    get:
+      tags:
+      - Admin
+      summary: List users
+      operationId: adminListUsers
+      parameters:
+      - name: page
+        in: query
+        schema: *id001
+      - name: pageSize
+        in: query
+        schema: *id002
+      - name: q
+        in: query
+        description: Case-insensitive name or email search
+        schema:
+          type: string
+      - name: role
+        in: query
+        schema:
+          $ref: '#/components/schemas/Role'
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - active
+          - deleted
+      responses:
+        '200':
+          description: Paginated users
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: List users.
+    post:
+      tags:
+      - Admin
+      summary: Create one user
+      operationId: adminCreateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCreatedUserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Email is already registered
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Create one user.
+  /api/admin/users/{id}:
+    parameters:
+    - $ref: '#/components/parameters/UserId'
+    get:
+      tags:
+      - Admin
+      summary: Get one user
+      operationId: adminGetUser
+      responses:
+        '200':
+          description: User detail
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Get one user.
+    delete:
+      tags:
+      - Admin
+      summary: Soft-delete one user
+      operationId: adminDeleteUser
+      responses:
+        '200':
+          description: User deactivated
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedUserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Soft-delete one user.
+  /api/admin/users/{id}/adjust:
+    parameters:
+    - $ref: '#/components/parameters/UserId'
+    post:
+      tags:
+      - Admin
+      summary: Credit or debit a user's wallet
+      operationId: adminAdjustUserBalance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustmentRequest'
+      responses:
+        '200':
+          description: Balance adjusted
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Credit or debit a user's wallet.
+  /api/admin/transactions:
+    get:
+      tags:
+      - Admin
+      summary: List all transactions
+      operationId: adminListTransactions
+      parameters:
+      - name: page
+        in: query
+        schema: *id001
+      - name: pageSize
+        in: query
+        schema: *id002
+      - name: type
+        in: query
+        schema: *id006
+      - name: currency
+        in: query
+        schema: *id003
+      - name: from
+        in: query
+        description: Inclusive ISO date or date-time lower bound
+        schema: *id004
+      - name: to
+        in: query
+        description: Inclusive ISO date or date-time upper bound
+        schema: *id005
+      - name: userName
+        in: query
+        description: Case-insensitive user name search
+        schema:
+          type: string
+          maxLength: 100
+      responses:
+        '200':
+          description: Paginated transactions with user identity
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: List all transactions.
+  /api/admin/broadcasts:
+    post:
+      tags:
+      - Admin
+      - Broadcasts
+      summary: Create one system broadcast
+      operationId: adminCreateBroadcast
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBroadcastRequest'
+      responses:
+        '201':
+          description: Broadcast created
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBroadcastEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Create one system broadcast.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: *id001
+    PageSize:
+      name: pageSize
+      in: query
+      schema: *id002
+    TransactionType:
+      name: type
+      in: query
+      schema: *id006
+    Currency:
+      name: currency
+      in: query
+      schema: *id003
+    FromDate:
+      name: from
+      in: query
+      description: Inclusive ISO date or date-time lower bound
+      schema: *id004
+    ToDate:
+      name: to
+      in: query
+      description: Inclusive ISO date or date-time upper bound
+      schema: *id005
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  headers:
+    RateLimitLimit:
+      description: Maximum requests allowed in the active fixed window.
+      schema:
+        type: integer
+        minimum: 1
+    RateLimitRemaining:
+      description: Requests remaining in the active fixed window.
+      schema:
+        type: integer
+        minimum: 0
+    RateLimitReset:
+      description: Active-window reset time as Unix epoch seconds.
+      schema:
+        type: integer
+        format: int64
+    RetryAfter:
+      description: Seconds until a rate-limited request may be retried.
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    BadRequest:
+      description: Invalid body, query, or operation
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing, invalid, expired, or inactive-user token
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Administrator role required
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource not found
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnprocessableEntity:
+      description: Insufficient wallet or gold balance
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Request limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    Role:
+      type: string
+      enum:
+      - user
+      - admin
+    Currency:
+      type: string
+      enum:
+      - USD
+      - EUR
+      - LAK
+      - THB
+      - CNY
+    UsdCurrency:
+      type: string
+      enum:
+      - USD
+    TransactionType:
+      type: string
+      enum:
+      - deposit
+      - withdraw
+      - trade_buy
+      - trade_sell
+      - adjustment
+    TradeType:
+      type: string
+      enum:
+      - buy
+      - sell
+    MoneyInput:
+      type: number
+      format: double
+      minimum: 0.01
+      maximum: 1000000000000
+      multipleOf: 0.01
+      description: Positive monetary input with at most two decimal places.
+    GoldInput:
+      type: number
+      format: double
+      minimum: 1.0e-08
+      maximum: 1000000
+      multipleOf: 1.0e-08
+      description: Positive gold amount in grams with at most eight decimal places.
+    FixedMoney:
+      type: string
+      pattern: ^-?[0-9]+\.[0-9]{2}$
+      example: '125.42'
+      description: Fixed-point monetary value with exactly two decimal places.
+    FixedGold:
+      type: string
+      pattern: ^[0-9]+\.[0-9]{8}$
+      example: '5.00000000'
+      description: Fixed-point gold value with exactly eight decimal places.
+    DateTime:
+      type: string
+      format: date-time
+    RegisterRequest:
+      type: object
+      required:
+      - name
+      - email
+      - password
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 8
+          maxLength: 100
+    LoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AdminCreateUserRequest:
+      type: object
+      required:
+      - name
+      - email
+      - password
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 8
+          maxLength: 100
+        role:
+          $ref: '#/components/schemas/Role'
+    MoneyMutationRequest:
+      type: object
+      required:
+      - amount
+      - currency
+      properties:
+        amount:
+          $ref: '#/components/schemas/MoneyInput'
+        currency:
+          $ref: '#/components/schemas/Currency'
+    TradeRequest:
+      type: object
+      required:
+      - goldAmount
+      - currency
+      properties:
+        goldAmount:
+          $ref: '#/components/schemas/GoldInput'
+        currency:
+          $ref: '#/components/schemas/Currency'
+    SetPriceRequest:
+      type: object
+      required:
+      - currency
+      - pricePerGram
+      properties:
+        currency:
+          $ref: '#/components/schemas/UsdCurrency'
+        pricePerGram:
+          type: number
+          format: double
+          minimum: 0.01
+          maximum: 1000000
+          multipleOf: 0.01
+    AdjustmentRequest:
+      type: object
+      required:
+      - amount
+      - currency
+      - reason
+      properties:
+        amount:
+          type: number
+          format: double
+          multipleOf: 0.01
+          minimum: -1000000000000
+          maximum: 1000000000000
+          not:
+            enum:
+            - 0
+          description: Positive credit or negative debit, with magnitude at least 0.01 and at most two
+            decimal places.
+        currency:
+          $ref: '#/components/schemas/Currency'
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 255
+    CreateBroadcastRequest:
+      type: object
+      required:
+      - title
+      - message
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        active:
+          type: boolean
+          default: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    UserIdentity:
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - role
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/Role'
+    CreatedUser:
+      allOf:
+      - $ref: '#/components/schemas/UserIdentity'
+      - type: object
+        required:
+        - createdAt
+        properties:
+          createdAt:
+            $ref: '#/components/schemas/DateTime'
+    AuthData:
+      type: object
+      required:
+      - token
+      - user
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserIdentity'
+    RegisterAuthData:
+      type: object
+      required:
+      - token
+      - user
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/CreatedUser'
+    WalletBalance:
+      type: object
+      required:
+      - currency
+      - balance
+      properties:
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          $ref: '#/components/schemas/FixedMoney'
+    GoldHolding:
+      type: object
+      required:
+      - grams
+      properties:
+        grams:
+          $ref: '#/components/schemas/FixedGold'
+    Profile:
+      allOf:
+      - $ref: '#/components/schemas/CreatedUser'
+      - type: object
+        required:
+        - wallets
+        - goldHoldings
+        - bankBalanceUsd
+        - goldGrams
+        properties:
+          wallets:
+            type: array
+            items:
+              $ref: '#/components/schemas/WalletBalance'
+          goldHoldings:
+            type: array
+            items:
+              $ref: '#/components/schemas/GoldHolding'
+          bankBalanceUsd:
+            $ref: '#/components/schemas/FixedMoney'
+          goldGrams:
+            $ref: '#/components/schemas/FixedGold'
+    AdminUser:
+      allOf:
+      - $ref: '#/components/schemas/Profile'
+      - type: object
+        required:
+        - deletedAt
+        properties:
+          deletedAt:
+            type: string
+            format: date-time
+            nullable: true
+    WalletSummary:
+      type: object
+      required:
+      - wallets
+      - goldGrams
+      properties:
+        wallets:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletBalance'
+        goldGrams:
+          $ref: '#/components/schemas/FixedGold'
+    BalanceMutation:
+      type: object
+      required:
+      - walletId
+      - balanceAfter
+      properties:
+        walletId:
+          type: string
+          format: uuid
+        balanceAfter:
+          $ref: '#/components/schemas/FixedMoney'
+    Withdrawal:
+      allOf:
+      - $ref: '#/components/schemas/BalanceMutation'
+      - type: object
+        required:
+        - previousBalance
+        properties:
+          previousBalance:
+            $ref: '#/components/schemas/FixedMoney'
+    Transaction:
+      type: object
+      required:
+      - id
+      - type
+      - amount
+      - currency
+      - balanceAfter
+      - createdAt
+      - wallet
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        amount:
+          $ref: '#/components/schemas/FixedMoney'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balanceAfter:
+          $ref: '#/components/schemas/FixedMoney'
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        wallet:
+          type: object
+          required:
+          - currency
+          properties:
+            currency:
+              $ref: '#/components/schemas/Currency'
+    AdminTransaction:
+      type: object
+      required:
+      - id
+      - userId
+      - type
+      - amount
+      - currency
+      - balanceAfter
+      - createdAt
+      - user
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        amount:
+          $ref: '#/components/schemas/FixedMoney'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balanceAfter:
+          $ref: '#/components/schemas/FixedMoney'
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        user:
+          type: object
+          required:
+          - name
+          - email
+          properties:
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+    Trade:
+      type: object
+      required:
+      - id
+      - userId
+      - type
+      - goldAmount
+      - pricePerGram
+      - currency
+      - totalCost
+      - goldBalanceAfter
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/TradeType'
+        goldAmount:
+          $ref: '#/components/schemas/FixedGold'
+        pricePerGram:
+          $ref: '#/components/schemas/FixedMoney'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        totalCost:
+          $ref: '#/components/schemas/FixedMoney'
+        goldBalanceAfter:
+          $ref: '#/components/schemas/FixedGold'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+    TradeMutation:
+      type: object
+      required:
+      - tradeId
+      - type
+      - goldAmount
+      - pricePerGram
+      - currency
+      - totalCost
+      - goldBalanceAfter
+      - walletBalanceAfter
+      properties:
+        tradeId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/TradeType'
+        goldAmount:
+          $ref: '#/components/schemas/FixedGold'
+        pricePerGram:
+          $ref: '#/components/schemas/FixedMoney'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        totalCost:
+          $ref: '#/components/schemas/FixedMoney'
+        goldBalanceAfter:
+          $ref: '#/components/schemas/FixedGold'
+        walletBalanceAfter:
+          $ref: '#/components/schemas/FixedMoney'
+    Price:
+      type: object
+      required:
+      - currency
+      - pricePerGram
+      - updatedAt
+      properties:
+        currency:
+          $ref: '#/components/schemas/UsdCurrency'
+        pricePerGram:
+          $ref: '#/components/schemas/FixedMoney'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+    Broadcast:
+      type: object
+      required:
+      - id
+      - title
+      - message
+      - createdAt
+      - expiresAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        message:
+          type: string
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    AdminBroadcast:
+      allOf:
+      - $ref: '#/components/schemas/Broadcast'
+      - type: object
+        required:
+        - active
+        properties:
+          active:
+            type: boolean
+    Pagination:
+      type: object
+      required:
+      - page
+      - pageSize
+      - total
+      - totalPages
+      - hasNext
+      - hasPrevious
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrevious:
+          type: boolean
+    PaginationMeta:
+      type: object
+      required:
+      - pagination
+      properties:
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ErrorEnvelope:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details: {}
+    AuthEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthData'
+    RegisterAuthEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/RegisterAuthData'
+    ProfileEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Profile'
+    WalletSummaryEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/WalletSummary'
+    BalanceMutationEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/BalanceMutation'
+    WithdrawalEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Withdrawal'
+    TradeMutationEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TradeMutation'
+    PriceEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Price'
+    BroadcastListEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - broadcasts
+          properties:
+            broadcasts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Broadcast'
+    AdminBroadcastEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminBroadcast'
+    AdminCreatedUserEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/CreatedUser'
+    AdminUserEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUser'
+    DeletedUserEnvelope:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - id
+          - deletedAt
+          - message
+          properties:
+            id:
+              type: string
+              format: uuid
+            deletedAt:
+              $ref: '#/components/schemas/DateTime'
+            message:
+              type: string
+    TransactionListEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    AdminTransactionListEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminTransaction'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    TradeListEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trade'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    AdminUserListEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUser'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
