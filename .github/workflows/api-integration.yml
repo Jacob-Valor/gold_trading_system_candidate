@@ -1,0 +1,98 @@
+name: API integration
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  api-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BASE_URL: http://127.0.0.1:3000
+      DATABASE_URL: postgresql://gold_test:gold_test@127.0.0.1:5432/gold_test
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: ci-only-not-a-production-secret-0123456789abcdef
+      JWT_EXPIRES_IN: 1h
+      GOLD_PRICE_USD: "125.42"
+      ALLOW_SIMULATED_DEPOSITS: "true"
+      SEED_ADMIN_EMAIL: admin@example.com
+      SEED_ADMIN_PASSWORD: Admin123!
+      SEED_USER_EMAIL: user@example.com
+      SEED_USER_PASSWORD: User123!
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: gold_test
+          POSTGRES_PASSWORD: gold_test
+          POSTGRES_DB: gold_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gold_test -d gold_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Apply database migrations
+        run: npm run prisma:migrate
+
+      - name: Seed disposable database
+        run: npm run db:seed
+
+      - name: Build application
+        run: npm run build
+
+      - name: Start application
+        run: npm run start -- --hostname 127.0.0.1 > /tmp/gold-trading-system.log 2>&1 &
+
+      - name: Wait for API readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error "$BASE_URL/api/price" > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/gold-trading-system.log
+          exit 1
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Run API integration tests
+        run: npm run test:integration
+
+      - name: Typecheck
+        run: npm run typecheck
