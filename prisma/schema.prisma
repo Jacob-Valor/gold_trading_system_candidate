@@ -1,0 +1,157 @@
+// Prisma schema — Gold Trading System
+// Currency amounts: NUMERIC(20,2); gold grams: NUMERIC(20,8).
+// All balance updates are serialized with PostgreSQL row locks (see services/wallet).
+// Soft delete via `deletedAt`; deleted users cannot log in or transact (see lib/auth).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  // Prisma 7: use the query compiler (no binary engine files at runtime).
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum TransactionType {
+  deposit
+  withdraw
+  trade_buy
+  trade_sell
+  adjustment
+}
+
+enum TradeType {
+  buy
+  sell
+}
+
+enum Currency {
+  USD
+  EUR
+  LAK
+  THB
+  CNY
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String
+  email        String         @unique
+  passwordHash String
+  role         Role           @default(user)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  wallets          Wallet[]
+  transactions     Transaction[]
+  trades           Trade[]
+  goldHoldings     GoldHolding[]
+  adminAdjustments Adjustment[] @relation("Adjuster")
+  broadcasts       Broadcast[]
+
+  @@index([email])
+  @@index([deletedAt])
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency  Currency
+  balance   Decimal  @db.Decimal(20, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+  adjustments  Adjustment[]
+
+  @@unique([userId, currency])
+  @@index([userId])
+}
+
+model Transaction {
+  id           String          @id @default(uuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId     String
+  wallet       Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type         TransactionType
+  amount       Decimal         @db.Decimal(20, 2)
+  currency     Currency
+  balanceAfter Decimal         @db.Decimal(20, 2)
+  description  String?
+  createdAt    DateTime        @default(now())
+
+  @@index([userId, createdAt])
+  @@index([walletId, createdAt])
+  @@index([type, createdAt])
+  @@index([createdAt])
+}
+
+model Trade {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             TradeType
+  goldAmount       Decimal   @db.Decimal(20, 8)
+  pricePerGram     Decimal   @db.Decimal(20, 2)
+  currency         Currency
+  totalCost        Decimal   @db.Decimal(20, 2)
+  goldBalanceAfter Decimal   @db.Decimal(20, 8)
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([createdAt])
+}
+
+model GoldHolding {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grams     Decimal  @db.Decimal(20, 8)
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Adjustment {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation("Adjuster", fields: [userId], references: [id], onDelete: Cascade)
+  walletId  String
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount    Decimal  @db.Decimal(20, 2)
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Broadcast {
+  id        String    @id @default(uuid())
+  title     String
+  message   String
+  active    Boolean   @default(true)
+  createdBy String
+  creator   User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([active, createdAt])
+}
+
+model Price {
+  id           String   @id @default("singleton")
+  currency     Currency
+  pricePerGram Decimal  @db.Decimal(20, 2)
+  updatedAt    DateTime @updatedAt
+}
