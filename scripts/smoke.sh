@@ -6,8 +6,15 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://localhost:3000}"
 JQ="${JQ:-jq}"
 
-EMAIL="smoke-$(date +%s)@example.com"
+command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
+command -v "$JQ" >/dev/null || { echo "$JQ is required" >&2; exit 1; }
+
+EMAIL="smoke-$$-$RANDOM-$(date +%s%N)@example.com"
 PASSWORD="Smoke123!"
+cleanup_test_user() {
+  npx --no-install tsx scripts/cleanup-test-data.ts "$EMAIL" >/dev/null 2>&1 || true
+}
+trap cleanup_test_user EXIT
 
 jqget() { $JQ -r "$2" <<<"$1"; }
 jqok() { $JQ -e "$2" >/dev/null <<<"$1"; }
@@ -54,12 +61,12 @@ WD=$(curl -sS -X POST "$BASE_URL/api/wallet/withdraw" \
 jqok "$WD" '.data.balanceAfter | tonumber >= 0'
 echo "OK balance=$(jqget "$WD" '.data.balanceAfter')"
 
-echo "== Withdraw too much (should fail 422/400) =="
+echo "== Withdraw too much (should fail 422) =="
 CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/wallet/withdraw" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"amount":999999999,"currency":"USD"}')
-echo "Got HTTP $CODE (expected 4xx)"
-[ "$CODE" != "200" ]
+echo "Got HTTP $CODE (expected 422)"
+[ "$CODE" = "422" ]
 
 echo "== Transactions list =="
 TX=$(curl -sS "$BASE_URL/api/wallet/transactions?page=1&pageSize=5" -H "Authorization: Bearer $TOKEN")
@@ -76,35 +83,31 @@ CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/auth/login
   -H 'Content-Type: application/json' -d '{"email":"nope","password":"x"}')
 echo "Got HTTP $CODE (expected 400)"
 [ "$CODE" = "400" ]
-
-# --- Admin checks (before the rate-limit loop, which would exhaust the auth window) ---
+ADMIN_EMAIL="${ADMIN_EMAIL:?Set ADMIN_EMAIL to the seeded admin email}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD to the seeded admin password}"
 echo "== Admin login =="
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
 ADM=$(curl -sS -X POST "$BASE_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" || true)
-if jqok "$ADM" '.data.token' 2>/dev/null; then
-  ATOKEN=$(jqget "$ADM" '.data.token')
-  echo "== Admin: list users =="
-  USERS=$(curl -sS "$BASE_URL/api/admin/users?page=1&pageSize=5" -H "Authorization: Bearer $ATOKEN")
-  jqok "$USERS" '.data | length > 0'
-  echo "OK users=$(jqget "$USERS" '.meta.pagination.total')"
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+jqok "$ADM" '.data.token'
+ATOKEN=$(jqget "$ADM" '.data.token')
 
-  echo "== Admin: list transactions =="
-  TXS=$(curl -sS "$BASE_URL/api/admin/transactions?page=1&pageSize=5" -H "Authorization: Bearer $ATOKEN")
-  jqok "$TXS" '.meta.pagination.total > 0'
+echo "== Admin: list users =="
+USERS=$(curl -sS "$BASE_URL/api/admin/users?page=1&pageSize=5" -H "Authorization: Bearer $ATOKEN")
+jqok "$USERS" '.data | length > 0'
+echo "OK users=$(jqget "$USERS" '.meta.pagination.total')"
 
-  echo "== Soft delete: disable smoke user, login must fail =="
-  curl -sS -X DELETE "$BASE_URL/api/admin/users/$USERID" -H "Authorization: Bearer $ATOKEN" >/dev/null
-  DEL_BODY="{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
-  CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/auth/login" \
-    -H 'Content-Type: application/json' -d "$DEL_BODY")
-  echo "Login after delete: HTTP $CODE (expected 401)"
-  [ "$CODE" = "401" ]
-else
-  echo "WARN: admin login failed — seed may not have run; skipping admin checks"
-fi
+echo "== Admin: list transactions =="
+TXS=$(curl -sS "$BASE_URL/api/admin/transactions?page=1&pageSize=5" -H "Authorization: Bearer $ATOKEN")
+jqok "$TXS" '.meta.pagination.total > 0'
+
+echo "== Soft delete: disable smoke user, login must fail =="
+curl -sS -X DELETE "$BASE_URL/api/admin/users/$USERID" -H "Authorization: Bearer $ATOKEN" >/dev/null
+DEL_BODY="{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/auth/login" \
+  -H 'Content-Type: application/json' -d "$DEL_BODY")
+echo "Login after delete: HTTP $CODE (expected 401)"
+[ "$CODE" = "401" ]
 
 echo "== Rate limit check (login x15) =="
 LOGIN_BODY="{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
@@ -117,7 +120,8 @@ done
 if [ "$RL" = "1" ]; then
   echo "OK rate-limited (429)"
 else
-  echo "WARN: no 429 observed in 15 attempts (limit may differ)"
+  echo "ERROR: no 429 observed in 15 attempts" >&2
+  exit 1
 fi
 
 echo "== All smoke checks passed =="

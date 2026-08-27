@@ -1,6 +1,9 @@
-import { z } from "zod";
-import { describe, expect, test } from "vitest";
+import "dotenv/config";
+import { afterAll, describe, expect, test } from "vitest";
+import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
+import { z } from "zod";
 const rawBaseUrl = process.env.BASE_URL;
 const BASE_URL =
   rawBaseUrl && /^https?:\/\//.test(rawBaseUrl)
@@ -11,6 +14,28 @@ const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "Admin123!";
 const PASSWORD = "Integration123!";
 const runSegment = (Date.now() & 0xffff).toString(16);
 let sequence = 0;
+const createdUserIds: string[] = [];
+const createdBroadcastTitles: string[] = [];
+const cleanupUrl = process.env.TEST_CLEANUP_DATABASE_URL;
+const cleanupPrisma = cleanupUrl
+  ? new PrismaClient({ adapter: new PrismaPg({ connectionString: cleanupUrl }) })
+  : undefined;
+
+afterAll(async () => {
+  if (!cleanupPrisma) return;
+  try {
+    if (createdBroadcastTitles.length > 0) {
+      await cleanupPrisma.broadcast.deleteMany({
+        where: { title: { in: createdBroadcastTitles } },
+      });
+    }
+    if (createdUserIds.length > 0) {
+      await cleanupPrisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
+    }
+  } finally {
+    await cleanupPrisma.$disconnect();
+  }
+});
 
 const paginationSchema = z.object({
   page: z.number(),
@@ -26,9 +51,10 @@ const apiDataSchema = z
     token: z.string().optional(),
     user: z
       .object({
-        id: z.string(),
-        email: z.string(),
-        role: z.string(),
+        id: z.string().optional(),
+        name: z.string().optional(),
+        email: z.string().optional(),
+        role: z.string().optional(),
       })
       .passthrough()
       .optional(),
@@ -145,7 +171,8 @@ async function registerUser(label: string): Promise<UserSession> {
     token: expect.any(String),
     user: { id: expect.any(String), email, role: "user" },
   });
-  if (!data.token || !data.user) throw new Error("Registration response omitted token or user");
+  if (!data.token || !data.user?.id) throw new Error("Registration response omitted token or user id");
+  createdUserIds.push(data.user.id);
   return {
     id: data.user.id,
     email,
@@ -544,6 +571,109 @@ describe.sequential("running API integration contracts", () => {
     expectValidationFailure(await api("/api/wallet/transactions?page=0", { token: user.token }));
     expectValidationFailure(await api("/api/wallet/transactions?pageSize=0", { token: user.token }));
     expectValidationFailure(await api("/api/wallet/transactions?pageSize=101", { token: user.token }));
+  });
+
+  test("covers admin operations, broadcasts, profile, filters, and multi-currency settlement", async () => {
+    const adminToken = await getAdminToken();
+    const mixedEmail = `CaseUser-${runSegment}@Example.TEST`;
+    const created = await api("/api/admin/users", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        name: "Case User",
+        email: mixedEmail,
+        password: PASSWORD,
+        role: "user",
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(objectData(created).email).toBe(mixedEmail.toLowerCase());
+
+    const createdLogin = await api("/api/auth/login", {
+      method: "POST",
+      ip: uniqueIp(),
+      body: { email: mixedEmail.toLowerCase(), password: PASSWORD },
+    });
+    expect(createdLogin.status).toBe(200);
+    const createdToken = String(objectData(createdLogin).token);
+    const createdId = String(objectData(createdLogin).user?.id);
+    createdUserIds.push(createdId);
+
+    const me = await api("/api/auth/me", { token: createdToken });
+    expect(me.status).toBe(200);
+    expect(objectData(me)).toMatchObject({
+      id: createdId,
+      email: mixedEmail.toLowerCase(),
+      role: "user",
+    });
+
+    const deposit = await api("/api/wallet/deposit", {
+      method: "POST",
+      token: createdToken,
+      body: { amount: 100, currency: "EUR" },
+    });
+    expect(deposit.status).toBe(201);
+
+    const buy = await api("/api/trades/buy", {
+      method: "POST",
+      token: createdToken,
+      body: { goldAmount: 0.5, currency: "EUR" },
+    });
+    expect(buy.status).toBe(200);
+    expect(objectData(buy).currency).toBe("EUR");
+
+    const sell = await api("/api/trades/sell", {
+      method: "POST",
+      token: createdToken,
+      body: { goldAmount: 0.25, currency: "EUR" },
+    });
+    expect(sell.status).toBe(200);
+
+    const adjustment = await api(`/api/admin/users/${createdId}/adjust`, {
+      method: "POST",
+      token: adminToken,
+      body: { amount: 10, currency: "USD", reason: "Integration adjustment" },
+    });
+    expect(adjustment.status).toBe(200);
+    expectMoney(objectData(adjustment).balanceAfter, "10.00");
+
+    const broadcastTitle = `Integration broadcast ${runSegment}`;
+    const broadcast = await api("/api/admin/broadcasts", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        title: broadcastTitle,
+        message: "Integration broadcast",
+      },
+    });
+    expect(broadcast.status).toBe(201);
+    createdBroadcastTitles.push(broadcastTitle);
+
+    const broadcasts = await api("/api/broadcasts", { token: createdToken });
+    expect(broadcasts.status).toBe(200);
+    const activeBroadcasts = objectData(broadcasts).broadcasts;
+    expect(Array.isArray(activeBroadcasts)).toBe(true);
+    if (!Array.isArray(activeBroadcasts)) throw new Error("Expected broadcast array");
+    expect(
+      activeBroadcasts.some(
+        (row) =>
+          typeof row === "object" &&
+          row !== null &&
+          "title" in row &&
+          row.title === broadcastTitle,
+      ),
+    ).toBe(true);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const filteredTransactions = await api(
+      `/api/admin/transactions?userName=Case%20User&from=${today}&to=${today}&page=1&pageSize=100`,
+      { token: adminToken },
+    );
+    expect(filteredTransactions.status).toBe(200);
+    expect(filteredTransactions.body.meta?.pagination?.total).toBeGreaterThan(0);
+
+    const invalidRole = await api("/api/admin/users?role=bogus", { token: adminToken });
+    expectValidationFailure(invalidRole);
   });
 
   test("keeps Redis auth attempts rate-limited after the threshold and emits rate headers", async () => {
