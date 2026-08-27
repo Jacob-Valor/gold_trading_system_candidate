@@ -8,7 +8,7 @@ import { ok } from "@/lib/http";
 import { handlePrismaError } from "@/lib/exception";
 import { parseOrThrow, parseBody } from "@/lib/validate";
 import { signAccessToken } from "@/lib/jwt";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAuth } from "@/lib/rate-limit";
 import { wrap } from "@/lib/request-context";
 
 export const runtime = "nodejs";
@@ -19,23 +19,22 @@ const loginSchema = z.object({
   password: z.string().min(1).max(100),
 });
 
+// Always perform a bcrypt comparison, including for unknown/deactivated users.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("invalid-login-placeholder", 10);
+
 /** POST /api/auth/login — verify credentials, reject deactivated users, return token. */
 export const POST = wrap(async (req: NextRequest) => {
   try {
     const body = await parseBody(req);
     const parsed = parseOrThrow(loginSchema, body, "login");
-    await rateLimit(req, { kind: "auth", key: parsed.email });
+    await rateLimitAuth(req, parsed.email);
 
     const user = await prisma.user.findUnique({ where: { email: parsed.email } });
-    if (!user || user.deletedAt) {
-      return NextResponse.json(
-        { error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" } },
-        { status: 401 },
-      );
-    }
-
-    const valid = await bcrypt.compare(parsed.password, user.passwordHash);
-    if (!valid) {
+    const valid = await bcrypt.compare(
+      parsed.password,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+    );
+    if (!user || user.deletedAt || !valid) {
       return NextResponse.json(
         { error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" } },
         { status: 401 },

@@ -7,7 +7,7 @@ import { ok } from "@/lib/http";
 import { handlePrismaError } from "@/lib/exception";
 import { parseOrThrow, parseBody } from "@/lib/validate";
 import { signAccessToken } from "@/lib/jwt";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAuth } from "@/lib/rate-limit";
 import { createUser } from "@/services/user";
 import { wrap } from "@/lib/request-context";
 
@@ -25,7 +25,7 @@ export const POST = wrap(async (req: NextRequest) => {
   try {
     const body = await parseBody(req);
     const parsed = parseOrThrow(registerSchema, body, "register");
-    await rateLimit(req, { kind: "auth", key: parsed.email });
+    await rateLimitAuth(req, parsed.email);
 
     const user = await createUser({
       name: parsed.name,

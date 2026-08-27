@@ -32,11 +32,14 @@ export function handlePrismaError(e: unknown): ApiError {
   return new ApiError(500, "INTERNAL_ERROR", "An unexpected error occurred");
 }
 
-/** Fail fast on a missing secret instead of signing with a weak default. */
+/** Fail fast on missing or obviously weak JWT secrets. */
 export function requireJwtSecret(): string {
-  return env("JWT_SECRET");
+  const secret = env("JWT_SECRET");
+  if (secret.length < 32) {
+    throw new Error("JWT_SECRET must contain at least 32 characters");
+  }
+  return secret;
 }
-
 export const isUserDeleted = (deletedAt: Date | null): boolean => deletedAt !== null;
 
 export { UnauthorizedError, ForbiddenError, NotFoundError };

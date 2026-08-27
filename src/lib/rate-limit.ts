@@ -48,6 +48,7 @@ class SlidingFixedWindow {
 // With Redis present these limits apply cluster-wide; otherwise they are per-process.
 const routeDefault = {
   auth: { windowMs: 15 * 60 * 1000, limit: 10 },
+  authClient: { windowMs: 15 * 60 * 1000, limit: 100 },
   sensitive: { windowMs: 60 * 1000, limit: 30 },
   general: { windowMs: 60 * 1000, limit: 120 },
 } as const;
@@ -86,9 +87,14 @@ function keyFor(
 }
 
 /**
- * Rate-limit by an explicit key, authenticated user, or trusted proxy IP, in
- * that order. Forwarded IP headers are ignored unless TRUST_PROXY=true.
+ * Authentication gets both an account bucket and an independent client bucket.
+ * Without a trusted proxy address, the client bucket intentionally falls back
+ * to a bounded global bucket rather than trusting spoofable forwarding headers.
  */
+export async function rateLimitAuth(req: NextRequest, accountKey: string): Promise<void> {
+  await rateLimit(req, { kind: "auth", key: accountKey });
+  await rateLimit(req, { kind: "authClient", key: proxyIp(req) ?? "anonymous" });
+}
 export async function rateLimit(
   req: NextRequest,
   opts: { kind?: RateLimitKind; user?: JwtPayload | null; key?: string } = {},
