@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 
 import type { Currency } from "@/lib/prisma";
-import { prisma } from "@/lib/prisma";
+import { readPrisma } from "@/lib/prisma";
 
 /** Static settlement rates applied to the persisted USD price reference. */
 const FX_RATES: Record<Currency, number> = {
@@ -18,16 +18,9 @@ const FX_RATES: Record<Currency, number> = {
  * on each request and is rounded exactly once by the trading service.
  */
 export async function getLivePrice(currency: Currency): Promise<number> {
-  let price = await prisma.price.upsert({
-    where: { id: "singleton" },
-    create: { id: "singleton", currency: "USD", pricePerGram: 125.42 },
-    update: {},
-  });
-  if (price.currency !== "USD") {
-    price = await prisma.price.update({
-      where: { id: price.id },
-      data: { currency: "USD" },
-    });
+  const price = await readPrisma.price.findUnique({ where: { id: "singleton" } });
+  if (!price || price.currency !== "USD") {
+    throw new Error("USD gold price is not configured");
   }
 
   return new Decimal(price.pricePerGram.toString()).mul(FX_RATES[currency]).toNumber();

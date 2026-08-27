@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { readPrisma, prisma } from "@/lib/prisma";
 import { ok } from "@/lib/http";
 import { handlePrismaError } from "@/lib/exception";
+import { NotFoundError } from "@/lib/errors";
 import { parseOrThrow } from "@/lib/validate";
 import { authenticate, requireAdmin } from "@/lib/auth";
 import { wrap } from "@/lib/request-context";
@@ -16,17 +17,9 @@ export const dynamic = "force-dynamic";
 /** GET /api/price — current mock gold price (public). */
 export const GET = wrap(async () => {
   try {
-    let price = await prisma.price.upsert({
-      where: { id: "singleton" },
-      create: { id: "singleton", currency: "USD", pricePerGram: 125.42 },
-      update: {},
-    });
-    if (price.currency !== "USD") {
-      price = await prisma.price.update({
-        where: { id: price.id },
-        data: { currency: "USD" },
-      });
-    }
+    const price = await readPrisma.price.findUnique({ where: { id: "singleton" } });
+    if (!price) throw new NotFoundError("Gold price is not configured");
+
     return ok({
       currency: "USD",
       pricePerGram: price.pricePerGram.toFixed(2),
