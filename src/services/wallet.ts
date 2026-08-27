@@ -15,6 +15,18 @@ import { UnprocessableError } from "@/lib/errors";
  * against the same locked row. The prior balance is derived from the returned
  * post-update value, so no stale pre-read can affect the audit record.
  */
+/** Lock and verify the account in the mutation transaction. */
+export async function lockActiveUser(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`SELECT "id" FROM "User"
+               WHERE "id" = ${userId} AND "deletedAt" IS NULL
+               FOR UPDATE`,
+  );
+  if (rows.length !== 1) {
+    throw new UnprocessableError("Account is deactivated or unavailable");
+  }
+}
+
 export async function changeWalletBalance(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -23,6 +35,7 @@ export async function changeWalletBalance(
   description?: string,
   transactionType?: TransactionType,
 ): Promise<{ walletId: string; balanceAfter: Decimal; previousBalance: Decimal }> {
+  await lockActiveUser(tx, userId);
   const quantizedDelta = delta.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   if (quantizedDelta.isZero()) {
     throw new UnprocessableError("Wallet change must be at least 0.01");

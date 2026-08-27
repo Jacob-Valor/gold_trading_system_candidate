@@ -18,10 +18,10 @@ export const CONFIG = {
     return process.env.JWT_EXPIRES_IN ?? "24h";
   },
   goldBasePriceUsd: () => Number(process.env.GOLD_PRICE_USD ?? "125.42"),
-  seedAdminEmail: () => process.env.SEED_ADMIN_EMAIL ?? "admin@example.com",
-  seedAdminPassword: () => process.env.SEED_ADMIN_PASSWORD ?? "Admin123!",
-  seedUserEmail: () => process.env.SEED_USER_EMAIL ?? "user@example.com",
-  seedUserPassword: () => process.env.SEED_USER_PASSWORD ?? "User123!",
+  seedAdminEmail: () => env("SEED_ADMIN_EMAIL"),
+  seedAdminPassword: () => env("SEED_ADMIN_PASSWORD"),
+  seedUserEmail: () => env("SEED_USER_EMAIL"),
+  seedUserPassword: () => env("SEED_USER_PASSWORD"),
   mockDelayMs: () => Number(process.env.MOCK_DELAY_MS ?? "0"),
   get isProduction() {
     return process.env.NODE_ENV === "production";

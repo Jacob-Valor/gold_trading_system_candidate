@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { okPaged } from "@/lib/http";
 import { handlePrismaError } from "@/lib/exception";
 import { parseOrThrow } from "@/lib/validate";
-import { TYPE_SCHEMA, DATE_SCHEMA, CURRENCY_SCHEMA } from "@/lib/schemas";
+import { TYPE_SCHEMA, DATE_SCHEMA, dateBoundary, CURRENCY_SCHEMA } from "@/lib/schemas";
 import { Prisma } from "@/lib/prisma";
 import { wrap } from "@/lib/request-context";
 
@@ -40,8 +40,8 @@ export const GET = wrap(async (req: NextRequest) => {
     if (parsed.currency) where.currency = parsed.currency;
     if (parsed.from || parsed.to) {
       where.createdAt = {
-        ...(parsed.from ? { gte: new Date(parsed.from) } : {}),
-        ...(parsed.to ? { lte: new Date(parsed.to) } : {}),
+        ...(parsed.from ? { gte: dateBoundary(parsed.from, "from") } : {}),
+        ...(parsed.to ? { lte: dateBoundary(parsed.to, "to") } : {}),
       };
     }
 

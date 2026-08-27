@@ -4,7 +4,7 @@ import Decimal from "decimal.js";
 
 import { withTransactionRetry } from "@/lib/prisma";
 import { UnprocessableError } from "@/lib/errors";
-import { changeWalletBalance } from "@/services/wallet";
+import { changeWalletBalance, lockActiveUser } from "@/services/wallet";
 
 export type TradeResult = {
   tradeId: string;
@@ -52,6 +52,7 @@ export async function executeTrade(
   }
 
   return withTransactionRetry(async (tx) => {
+    await lockActiveUser(tx, userId);
     const holding = await tx.goldHolding.upsert({
       where: { userId },
       create: { userId, grams: "0" },

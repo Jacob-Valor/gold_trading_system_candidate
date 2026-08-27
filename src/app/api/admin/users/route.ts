@@ -17,9 +17,15 @@ export const dynamic = "force-dynamic";
 
 const createUserSchema = z.object({
   name: z.string().min(2).max(100),
-  email: z.string().email().max(255),
+  email: z.string().trim().toLowerCase().email().max(255),
   password: z.string().min(8).max(100),
   role: z.enum(["user", "admin"]).optional(),
+});
+
+const userQuerySchema = z.object({
+  q: z.string().max(100).optional(),
+  role: z.enum(["user", "admin"]).optional(),
+  status: z.enum(["active", "deleted"]).optional(),
 });
 
 /** GET /api/admin/users — list all users with balances + gold, search/filter, paginated. */
@@ -30,7 +36,12 @@ export const GET = wrap(async (req: NextRequest) => {
 
     const { searchParams } = new URL(req.url);
     const { page, pageSize, skip, take } = getPagination(searchParams);
-    const where = buildUserWhere(searchParams);
+    const filters = parseOrThrow(
+      userQuerySchema,
+      Object.fromEntries(searchParams),
+      "user query",
+    );
+    const where = buildUserWhere(filters);
 
     const [total, users] = await Promise.all([
       prisma.user.count({ where }),
@@ -79,20 +90,21 @@ export const GET = wrap(async (req: NextRequest) => {
   }
 });
 
-function buildUserWhere(searchParams: URLSearchParams): Prisma.UserWhereInput {
+function buildUserWhere(filters: {
+  q?: string;
+  role?: "user" | "admin";
+  status?: "active" | "deleted";
+}): Prisma.UserWhereInput {
   const where: Prisma.UserWhereInput = {};
-  const q = searchParams.get("q");
-  if (q) {
+  if (filters.q) {
     where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { email: { contains: q, mode: "insensitive" } },
+      { name: { contains: filters.q, mode: "insensitive" } },
+      { email: { contains: filters.q, mode: "insensitive" } },
     ];
   }
-  const role = searchParams.get("role");
-  if (role) where.role = role as Prisma.UserWhereInput["role"];
-  const status = searchParams.get("status");
-  if (status === "active") where.deletedAt = null;
-  if (status === "deleted") where.deletedAt = { not: null };
+  if (filters.role) where.role = filters.role;
+  if (filters.status === "active") where.deletedAt = null;
+  if (filters.status === "deleted") where.deletedAt = { not: null };
   return where;
 }
 

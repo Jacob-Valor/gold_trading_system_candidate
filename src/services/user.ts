@@ -12,12 +12,13 @@ export type CreateUserInput = {
 };
 
 export async function createUser({ name, email, password, role = "user" }: CreateUserInput) {
+  const normalizedEmail = email.trim().toLowerCase();
   const passwordHash = await bcrypt.hash(password, 10);
 
   try {
     return await withTransactionRetry(async (tx) => {
       const user = await tx.user.create({
-        data: { name, email, passwordHash, role },
+        data: { name, email: normalizedEmail, passwordHash, role },
         select: { id: true, name: true, email: true, role: true, createdAt: true },
       });
 

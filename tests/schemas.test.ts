@@ -9,6 +9,7 @@ import {
   SIGNED_AMOUNT_SCHEMA,
   SORT_SCHEMA,
   TYPE_SCHEMA,
+  dateBoundary,
 } from "../src/lib/schemas";
 
 function expectAccepted(schema: { safeParse: (value: unknown) => { success: boolean } }, value: unknown) {
@@ -89,8 +90,20 @@ describe("enums and query primitives", () => {
     },
   );
 
-  test.each(["25-08-2026", "2026/08/25", "not-a-date"])("rejects date %s", (value) => {
+  test.each([
+    "25-08-2026",
+    "2026/08/25",
+    "not-a-date",
+    "2026-02-30",
+    "2026-99-99",
+    "2026-08-25T24:00",
+  ])("rejects date %s", (value) => {
     expectRejected(DATE_SCHEMA, value);
+  });
+
+  test("makes date-only upper bounds inclusive", () => {
+    expect(dateBoundary("2026-08-25", "from").toISOString()).toBe("2026-08-25T00:00:00.000Z");
+    expect(dateBoundary("2026-08-25", "to").toISOString()).toBe("2026-08-25T23:59:59.999Z");
   });
 
   test("defaults sort order to descending", () => {

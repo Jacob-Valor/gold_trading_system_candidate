@@ -91,10 +91,18 @@ describe("environment configuration", () => {
 
       expect(CONFIG.jwtExpiresIn).toBe("24h");
       expect(CONFIG.goldBasePriceUsd()).toBe(125.42);
-      expect(CONFIG.seedAdminEmail()).toBe("admin@example.com");
-      expect(CONFIG.seedAdminPassword()).toBe("Admin123!");
-      expect(CONFIG.seedUserEmail()).toBe("user@example.com");
-      expect(CONFIG.seedUserPassword()).toBe("User123!");
+      expect(() => CONFIG.seedAdminEmail()).toThrow(
+        "Missing required environment variable: SEED_ADMIN_EMAIL",
+      );
+      expect(() => CONFIG.seedAdminPassword()).toThrow(
+        "Missing required environment variable: SEED_ADMIN_PASSWORD",
+      );
+      expect(() => CONFIG.seedUserEmail()).toThrow(
+        "Missing required environment variable: SEED_USER_EMAIL",
+      );
+      expect(() => CONFIG.seedUserPassword()).toThrow(
+        "Missing required environment variable: SEED_USER_PASSWORD",
+      );
       expect(CONFIG.mockDelayMs()).toBe(0);
       expect(priceServicePaused()).toBe(false);
       expect(priceServiceInterval()).toBe(5_000);

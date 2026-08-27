@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ValidationError } from "./errors";
 
 /** Zero-trust query parsing: returns validated numbers with defaults.
  *  Robust against null/missing/NaN params (z.coerce would produce NaN and fail). */
@@ -19,10 +20,20 @@ export const paginationSchema = z.object({
 });
 
 export function getPagination(searchParams: URLSearchParams) {
-  const parsed = paginationSchema.parse({
+  const result = paginationSchema.safeParse({
     page: searchParams.get("page"),
     pageSize: searchParams.get("pageSize"),
   });
+  if (!result.success) {
+    throw new ValidationError(
+      "Invalid pagination",
+      result.error.issues.map((issue) => ({
+        field: issue.path.join("."),
+        message: issue.message,
+      })),
+    );
+  }
+  const parsed = result.data;
   return {
     page: parsed.page,
     pageSize: parsed.pageSize,

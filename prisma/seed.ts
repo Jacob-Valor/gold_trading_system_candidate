@@ -7,12 +7,19 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
 });
 
-async function main() {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "Admin123!";
-  const userEmail = process.env.SEED_USER_EMAIL ?? "user@example.com";
-  const userPassword = process.env.SEED_USER_PASSWORD ?? "User123!";
+function requiredSeedEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value || value.startsWith("REPLACE_WITH_")) {
+    throw new Error(`${name} must be explicitly configured for seeding`);
+  }
+  return value;
+}
 
+async function main() {
+  const adminEmail = requiredSeedEnv("SEED_ADMIN_EMAIL").toLowerCase();
+  const adminPassword = requiredSeedEnv("SEED_ADMIN_PASSWORD");
+  const userEmail = requiredSeedEnv("SEED_USER_EMAIL").toLowerCase();
+  const userPassword = requiredSeedEnv("SEED_USER_PASSWORD");
   const admin = await upsertUser(adminEmail, "System Admin", adminPassword, Role.admin);
   const user = await upsertUser(userEmail, "Demo User", userPassword, Role.user);
 

@@ -51,8 +51,33 @@ export const TYPE_SCHEMA = z.enum([
   "adjustment",
 ]);
 
+const DATE_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/;
+
 export const DATE_SCHEMA = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?$/, "date must be YYYY-MM-DD or ISO");
+  .regex(DATE_PATTERN, "date must be YYYY-MM-DD or ISO")
+  .refine((value) => {
+    const match = DATE_PATTERN.exec(value);
+    if (!match) return false;
+    const [, year, month, day, hour = "00", minute = "00", second = "00"] = match;
+    const date = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second));
+    return (
+      date.getUTCFullYear() === +year &&
+      date.getUTCMonth() === +month - 1 &&
+      date.getUTCDate() === +day &&
+      date.getUTCHours() === +hour &&
+      date.getUTCMinutes() === +minute &&
+      date.getUTCSeconds() === +second
+    );
+  }, "date must be a real calendar date and time");
+
+/** Convert a validated filter value into an inclusive date boundary. */
+export function dateBoundary(value: string, boundary: "from" | "to"): Date {
+  if (value.length === 10) {
+    return new Date(`${value}T${boundary === "from" ? "00:00:00.000" : "23:59:59.999"}Z`);
+  }
+  return new Date(value);
+}
 
 export const SORT_SCHEMA = z.enum(["asc", "desc"]).default("desc");
