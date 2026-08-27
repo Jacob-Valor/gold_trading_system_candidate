@@ -39,6 +39,21 @@ services:
       db:
         condition: service_healthy
 
+  # Removes disposable integration data from a local Compose database.
+  cleanup:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    pull_policy: missing
+    command: npx tsx scripts/cleanup-test-data.ts --all
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:?Set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env}"
+    depends_on:
+      db:
+        condition: service_healthy
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -70,6 +85,7 @@ services:
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       JWT_EXPIRES_IN: "${JWT_EXPIRES_IN:-24h}"
       GOLD_PRICE_USD: "${GOLD_PRICE_USD:-125.42}"
+      PRICE_WALKER_ENABLED: "${PRICE_WALKER_ENABLED:-false}"
       ALLOW_SIMULATED_DEPOSITS: "${ALLOW_SIMULATED_DEPOSITS:-false}"
       TRUST_PROXY: "${TRUST_PROXY:-false}"
       REDIS_URL: redis://redis:6379

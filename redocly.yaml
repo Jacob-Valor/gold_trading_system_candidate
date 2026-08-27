@@ -1,0 +1,9 @@
+extends:
+  - recommended
+
+rules:
+  # The spec documents the locally-runnable candidate demo, whose Compose stack
+  # binds to loopback. There is no public deployment host to document.
+  no-server-example.com: off
+  # A proprietary candidate submission has no hosted license URL.
+  info-license-strict: off

@@ -9,6 +9,8 @@ info:
     persisted state use fixed-point strings so clients do not lose precision.
 
     '
+  license:
+    name: Proprietary — candidate submission
   contact:
     name: Gold Trading System Maintainers
 servers:
@@ -795,32 +797,6 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
-    Page:
-      name: page
-      in: query
-      schema: *id001
-    PageSize:
-      name: pageSize
-      in: query
-      schema: *id002
-    TransactionType:
-      name: type
-      in: query
-      schema: *id006
-    Currency:
-      name: currency
-      in: query
-      schema: *id003
-    FromDate:
-      name: from
-      in: query
-      description: Inclusive ISO date or date-time lower bound
-      schema: *id004
-    ToDate:
-      name: to
-      in: query
-      description: Inclusive ISO date or date-time upper bound
-      schema: *id005
     UserId:
       name: id
       in: path

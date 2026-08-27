@@ -13,6 +13,7 @@ FROM base AS deps
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY prisma ./prisma
+COPY scripts ./scripts
 COPY prisma.config.ts ./
 RUN npx prisma generate
 

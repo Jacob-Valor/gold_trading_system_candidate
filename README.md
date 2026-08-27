@@ -31,7 +31,8 @@ cp .env.example .env
 docker compose up --build
 
 # 4. Wait for app health, then run the deployment probe.
-BASE_URL=http://localhost:3000 bash scripts/smoke.sh
+ADMIN_EMAIL="your-seeded-admin-email" ADMIN_PASSWORD="your-seeded-admin-password" \
+  BASE_URL=http://localhost:3000 bash scripts/smoke.sh
 ```
 
 The Compose stack requires explicit PostgreSQL, JWT, and seed credentials from
@@ -240,7 +241,7 @@ GET /api/admin/transactions?page=1&pageSize=50&type=withdraw&userName=ali&from=2
 - **Pagination** — transaction, trade, and admin-user lists accept `page` + `pageSize` (max 100) and return `meta.pagination` with `total`, `totalPages`, `hasNext`, and `hasPrevious`.
 - **Soft delete** — `deletedAt` on users; deleted users cannot log in or use protected routes, while their history is preserved.
 - **Security** — bcrypt password hashing, signed JWTs with issuer/audience/expiry validation, database-backed account checks on protected routes, admin RBAC, zod validation, parameterized Prisma/SQL operations, security headers, and no password hashes in responses.
-- **Admin-controlled mock price** — `GET /api/price` returns a singleton USD price (default `125.42` USD/gram), and an admin can replace it with `POST /api/price`. There is no background price walker.
+- **Mock price service** — `GET /api/price` is read-only and returns the persisted USD price; admins can replace it with `POST /api/price`. Set `PRICE_WALKER_ENABLED=true` to enable the opt-in background price walker, which varies the configured base price deterministically.
 - **Admin broadcasts** — `POST /api/admin/broadcasts` creates one broadcast object; `GET /api/broadcasts` returns active, unexpired broadcasts to authenticated users.
 - **Multi-currency settlement** — wallets, deposits, withdrawals, trades, and admin adjustments support `USD`, `EUR`, `LAK`, `THB`, and `CNY`. A single admin-controlled USD price is converted at the static reference rates in `src/services/price.ts`; only the USD reference is persisted or overridden.
 
@@ -303,22 +304,27 @@ The machine-readable contract in [`openapi.yaml`](openapi.yaml) documents all 17
 The suite separates fast pure-unit checks from real API integration tests:
 
 ```bash
-npm run test:unit         # config, precision schemas, pagination (77 tests)
-npm run test:coverage     # 100% on the three targeted pure modules
-npm run test:integration  # 10 API contracts against running PostgreSQL + Redis
-npm test                  # all 87 tests
+npm run test:unit         # config, precision schemas, pagination, body limits (83 tests)
+npm run test:coverage     # targeted pure-module coverage
+npm run test:integration  # 11 API contracts against running PostgreSQL + Redis
+npm test                  # all 94 tests when integration services are available
 ```
 
 Integration tests intentionally use the real database and Redis rather than
-mocking financial/concurrency behavior. CI starts disposable PostgreSQL 18 and
-Redis 7 services, migrates/seeds the database, starts the production server, then
-runs coverage, integration tests, typecheck, and build.
+mocking financial/concurrency behavior. Test-created users and integration
+broadcasts are deleted in `afterAll` when `TEST_CLEANUP_DATABASE_URL` is set.
+The smoke script deletes its temporary user on exit. For a disposable test
+database, `npm run test:cleanup` removes all `@example.test` users and
+integration broadcasts. With the local Compose database, run
+`docker compose --profile tools run --rm cleanup` instead.
 
 ## Useful commands
 
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run build       # production build (standalone)
-npm run smoke       # run smoke test against localhost:3000
+npx --yes @redocly/cli@1.34.0 lint openapi.yaml
+ADMIN_EMAIL="..." ADMIN_PASSWORD="..." npm run smoke
+npm run test:cleanup # cleanup a disposable database
 docker compose up --build
 ```
